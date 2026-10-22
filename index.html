@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ColdWatch | Cold Storage Monitoring</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0b1117;
+  --panel: #121c25;
+  --border: #243442;
+  --text: #e7f0f5;
+  --muted: #8ba0ae;
+  --accent: #36d6c3;
+  --blue: #65aaff;
+  --warning: #f6c66b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+}
+main {
+  max-width: 1200px;
+  margin: auto;
+  padding: 28px 20px 48px;
+}
+header, .row, .card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+header { margin-bottom: 28px; flex-wrap: wrap; }
+h1 { margin: 0; letter-spacing: 2px; font-size: 1.8rem; }
+h2 { font-size: 1rem; margin: 0 0 16px; }
+p { color: var(--muted); }
+.eyebrow {
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: .72rem;
+}
+.status {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: .8rem;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px;
+  min-width: 0;
+}
+.metric {
+  font-size: clamp(2.4rem, 5vw, 3.8rem);
+  font-weight: 650;
+  letter-spacing: -2px;
+  margin: 14px 0 6px;
+}
+.unit { font-size: 1rem; color: var(--muted); }
+.muted { color: var(--muted); font-size: .85rem; }
+.wide { grid-column: 1 / -1; }
+.chart-wrap { height: 300px; }
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.health-item {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.health-value { font-size: 1.25rem; margin-top: 8px; }
+button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 15px;
+  color: var(--text);
+  background: #1a2a36;
+  font: inherit;
+}
+button.primary {
+  background: var(--accent);
+  color: #06201e;
+  border-color: var(--accent);
+  font-weight: 650;
+}
+button:disabled { opacity: .45; cursor: not-allowed; }
+.controls { display: flex; gap: 10px; flex-wrap: wrap; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td {
+  padding: 12px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+th { color: var(--muted); font-weight: 500; }
+.table-wrap { overflow-x: auto; }
+#message { min-height: 1.4em; color: var(--muted); }
+footer { margin-top: 24px; font-size: .8rem; color: var(--muted); }
+@media (max-width: 700px) {
+  .grid { grid-template-columns: 1fr; }
+  .wide { grid-column: auto; }
+  .health-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  main { padding: 20px 12px 36px; }
+  .chart-wrap { height: 260px; }
+}
+</style>
+</head>
+
+<body>
+<main>
+  <header>
+    <div>
+      <div class="eyebrow">IIoT · Refrigeration telemetry</div>
+      <h1>COLDWATCH</h1>
+      <p>Cold Storage Monitoring System</p>
+    </div>
+    <div>
+      <div id="connection" class="status">Connecting…</div>
+      <p class="muted">Updated: <span id="updated">—</span></p>
+    </div>
+  </header>
+
+  <section class="grid">
+    <article class="card">
+      <div class="eyebrow">Temperature</div>
+      <div class="metric"><span id="temperature">—</span><span class="unit"> °C</span></div>
+      <p class="muted">Latest valid sensor reading</p>
+    </article>
+
+    <article class="card">
+      <div class="eyebrow">Relative humidity</div>
+      <div class="metric"><span id="humidity">—</span><span class="unit"> %</span></div>
+      <p class="muted">Latest valid sensor reading</p>
+    </article>
+
+    <article class="card wide">
+      <div class="card-top">
+        <h2>Environmental history</h2>
+        <span class="muted">Recent samples</span>
+      </div>
+      <div class="chart-wrap"><canvas id="history"></canvas></div>
+    </article>
+
+    <article class="card wide">
+      <h2>Device health</h2>
+      <div class="health-grid">
+        <div class="health-item">
+          <div class="muted">Reported state</div>
+          <div class="health-value" id="deviceState">Unknown</div>
+        </div>
+        <div class="health-item">
+          <div class="muted">Wi-Fi RSSI</div>
+          <div class="health-value" id="rssi">—</div>
+        </div>
+        <div class="health-item">
+          <div class="muted">Missed uploads</div>
+          <div class="health-value" id="missed">—</div>
+        </div>
+        <div class="health-item">
+          <div class="muted">Last sensor sample</div>
+          <div class="health-value" id="sampleAge">—</div>
+        </div>
+      </div>
+      <p class="muted">Connectivity is estimated from the last reported telemetry, not a live ping.</p>
+    </article>
+
+    <article class="card wide">
+      <h2>Remote control</h2>
+      <p>Send a command to the ESP32 through the control channel.</p>
+      <div class="controls">
+        <button class="primary" id="resumeBtn" onclick="sendCommand(1)">Resume sampling</button>
+        <button id="pauseBtn" onclick="sendCommand(0)">Pause sampling</button>
+      </div>
+      <p id="message" aria-live="polite"></p>
+      <p class="muted">Commands take effect when the ESP32 next polls ThingSpeak. These buttons require the control channel's write key at runtime.</p>
+    </article>
+
+    <article class="card wide">
+      <h2>Recent readings</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Timestamp</th><th>Temperature</th><th>Humidity</th></tr></thead>
+          <tbody id="readings">
+            <tr><td colspan="3">Loading readings…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+
+  <footer>
+    ColdWatch · ESP32 + DHT22 + ThingSpeak. Readings are observational and
+    should not replace an independently validated refrigeration safety system.
+  </footer>
+</main>
+
+<script>
+// Public data channel. No write key belongs in this file.
+const DATA_CHANNEL_ID = "3532567";
+
+// Keep the control channel ID here; it is not a secret.
+const CONTROL_CHANNEL_ID = "3532622";
+
+// Leave empty if the data channel is public.
+// A read key placed here is visible to everyone who can access this page.
+const DATA_READ_KEY = "";
+
+const REFRESH_MS = 60000;
+let historyChart;
+
+function feedUrl() {
+  const url = new URL(
+    `https://api.thingspeak.com/channels/${DATA_CHANNEL_ID}/feeds.json`
+  );
+  url.searchParams.set("results", "100");
+  if (DATA_READ_KEY) url.searchParams.set("api_key", DATA_READ_KEY);
+  return url;
+}
+
+function latestValid(feeds, field) {
+  for (let i = feeds.length - 1; i >= 0; i--) {
+    const value = feeds[i][field];
+    if (value !== null && value !== undefined && value !== "") {
+      const number = Number(value);
+      if (Number.isFinite(number)) return { value: number, feed: feeds[i] };
+    }
+  }
+  return null;
+}
+
+function formatTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
+
+function ageLabel(dateString) {
+  const time = new Date(dateString).getTime();
+  if (!Number.isFinite(time)) return "Unknown";
+  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (seconds < 90) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  return `${Math.floor(seconds / 3600)}h ago`;
+}
+
+function renderChart(feeds) {
+  const samples = feeds.filter(f =>
+    f.field1 !== null && f.field1 !== "" &&
+    f.field2 !== null && f.field2 !== "" &&
+    Number.isFinite(Number(f.field1)) &&
+    Number.isFinite(Number(f.field2))
+  );
+
+  const labels = samples.map(f => new Date(f.created_at).toLocaleTimeString());
+  const temperatures = samples.map(f => Number(f.field1));
+  const humidities = samples.map(f => Number(f.field2));
+
+  if (historyChart) historyChart.destroy();
+
+  historyChart = new Chart(document.getElementById("history"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Temperature °C",
+          data: temperatures,
+          borderColor: "#36d6c3",
+          backgroundColor: "#36d6c322",
+          yAxisID: "temp",
+          tension: 0.25,
+          pointRadius: 1
+        },
+        {
+          label: "Humidity %",
+          data: humidities,
+          borderColor: "#65aaff",
+          backgroundColor: "#65aaff22",
+          yAxisID: "humidity",
+          tension: 0.25,
+          pointRadius: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: { ticks: { color: "#8ba0ae", maxTicksLimit: 8 } },
+        temp: {
+          type: "linear", position: "left",
+          ticks: { color: "#36d6c3" },
+          title: { display: true, text: "°C", color: "#36d6c3" }
+        },
+        humidity: {
+          type: "linear", position: "right",
+          min: 0, max: 100,
+          ticks: { color: "#65aaff" },
+          grid: { drawOnChartArea: false },
+          title: { display: true, text: "% RH", color: "#65aaff" }
+        }
+      }
+    }
+  });
+}
+
+function renderTable(feeds) {
+  const samples = feeds.filter(f =>
+    f.field1 !== null && f.field1 !== "" &&
+    f.field2 !== null && f.field2 !== ""
+  ).slice(-10).reverse();
+
+  const tbody = document.getElementById("readings");
+  tbody.replaceChildren();
+
+  if (!samples.length) {
+    tbody.innerHTML = '<tr><td colspan="3">No sensor samples found.</td></tr>';
+    return;
+  }
+
+  for (const feed of samples) {
+    const tr = document.createElement("tr");
+    const values = [
+      formatTime(feed.created_at),
+      `${Number(feed.field1).toFixed(1)} °C`,
+      `${Number(feed.field2).toFixed(1)} %`
+    ];
+
+    for (const value of values) {
+      const td = document.createElement("td");
+      td.textContent = value;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+async function refresh() {
+  const connection = document.getElementById("connection");
+
+  try {
+    const response = await fetch(feedUrl(), { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const data = await response.json();
+    const feeds = data.feeds || [];
+
+    const temperature = latestValid(feeds, "field1");
+    const humidity = latestValid(feeds, "field2");
+    const state = latestValid(feeds, "field3");
+    const rssi = latestValid(feeds, "field7");
+    const missed = latestValid(feeds, "field8");
+
+    document.getElementById("temperature").textContent =
+      temperature ? temperature.value.toFixed(1) : "—";
+    document.getElementById("humidity").textContent =
+      humidity ? humidity.value.toFixed(1) : "—";
+    document.getElementById("deviceState").textContent =
+      state ? (state.value === 1 ? "Running" : "Paused") : "Unknown";
+    document.getElementById("rssi").textContent =
+      rssi ? `${rssi.value} dBm` : "—";
+    document.getElementById("missed").textContent =
+      missed ? missed.value : "—";
+
+    const latestSample = temperature && humidity
+      ? (new Date(temperature.feed.created_at) >
+         new Date(humidity.feed.created_at)
+          ? temperature.feed : humidity.feed)
+      : temperature?.feed || humidity?.feed;
+
+    document.getElementById("sampleAge").textContent =
+      latestSample ? ageLabel(latestSample.created_at) : "Unknown";
+    document.getElementById("updated").textContent =
+      new Date().toLocaleTimeString();
+
+    // Bulk feeds may contain status-only entries. Use actual sensor
+    // entries for the chart and table, not status entries.
+    renderChart(feeds);
+    renderTable(feeds);
+
+    const newest = feeds.length
+      ? new Date(feeds[feeds.length - 1].created_at).getTime()
+      : 0;
+    const age = newest ? (Date.now() - newest) / 1000 : Infinity;
+
+    connection.textContent = age < 600
+      ? "Telemetry recently received"
+      : "Telemetry stale";
+  } catch (error) {
+    connection.textContent = "Fetch failed";
+    document.getElementById("message").textContent =
+      `Unable to load telemetry: ${error.message}`;
+  }
+}
+
+async function sendCommand(command) {
+  const message = document.getElementById("message");
+
+  // The key is entered by the operator and is not stored in this file.
+  // Anyone who knows the key can control the device, so keep it private.
+  const key = prompt("Enter the CONTROL channel Write API Key:");
+  if (!key) return;
+
+  message.textContent = "Sending command…";
+  document.getElementById("pauseBtn").disabled = true;
+  document.getElementById("resumeBtn").disabled = true;
+
+  try {
+    const body = new URLSearchParams({
+      api_key: key,
+      field1: String(command)
+    });
+
+    const response = await fetch(
+      "https://api.thingspeak.com/update.json",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body
+      }
+    );
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const entryId = (await response.text()).trim();
+    if (!entryId || entryId === "0") {
+      throw new Error("ThingSpeak rejected the command");
+    }
+
+    message.textContent =
+      `Command submitted (entry ${entryId}). Waiting for ESP32 to poll it.`;
+  } catch (error) {
+    message.textContent =
+      `Command could not be confirmed: ${error.message}`;
+  } finally {
+    document.getElementById("pauseBtn").disabled = false;
+    document.getElementById("resumeBtn").disabled = false;
+  }
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>
